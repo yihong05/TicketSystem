@@ -1,0 +1,11 @@
+# Compiled binaries and object files
+*.exe
+*.obj
+*.ilk
+*.pdb
+
+# Temporary folders
+.vs/
+out/
+build/
+bin/
