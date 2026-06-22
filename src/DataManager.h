@@ -78,8 +78,17 @@ public:
                         seatNum += (char)('A' + r);
                         seatNum += std::to_string(c + 1);
 
-                        // Initially create as RegularTicket (unsold)
-                        tickets.push_back(std::make_shared<RegularTicket>(ticketId, name, seatNum, basePrice));
+                        // Seating zones based on row index:
+                        // Row A & B (index 0 & 1): VIP
+                        // Last row (and event has at least 3 rows): Student
+                        // Others: Regular
+                        if (r == 0 || r == 1) {
+                            tickets.push_back(std::make_shared<VIPTicket>(ticketId, name, seatNum, basePrice));
+                        } else if (r == rows - 1 && rows >= 3) {
+                            tickets.push_back(std::make_shared<StudentTicket>(ticketId, name, seatNum, basePrice));
+                        } else {
+                            tickets.push_back(std::make_shared<RegularTicket>(ticketId, name, seatNum, basePrice));
+                        }
                     }
                 }
                 eventIndex++;
