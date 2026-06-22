@@ -6,17 +6,30 @@
 #include "RegularTicket.h"
 #include "VIPTicket.h"
 #include "StudentTicket.h"
+#include "DataManager.h"
 
-void printMenu() {
+void printEventMenu(const std::vector<Event>& events) {
     std::cout << "\n==========================================\n";
-    std::cout << "     門票預購系統 (v1.0 記憶體測試版)     \n";
+    std::cout << "        門票預購系統 (v2.0 檔案存取版)     \n";
     std::cout << "==========================================\n";
-    std::cout << " 1. 顯示所有座位/票券資訊 (多型展示)\n";
-    std::cout << " 2. 進行預購門票\n";
+    std::cout << " 可預購活動列表:\n";
+    for (size_t i = 0; i < events.size(); ++i) {
+        std::cout << " " << i + 1 << ". " << events[i].name 
+                  << " (起價: $" << events[i].basePrice << " TWD)\n";
+    }
+    std::cout << " " << events.size() + 1 << ". 離開系統\n";
+    std::cout << "==========================================\n";
+    std::cout << "請選擇活動項目 (1-" << events.size() + 1 << "): ";
+}
+
+void printActionMenu(const std::string& eventName) {
+    std::cout << "\n--- 活動: [" << eventName << "] ---\n";
+    std::cout << " 1. 檢視所有座位與售票資訊\n";
+    std::cout << " 2. 預購此活動門票 (一般票/VIP票/學生票)\n";
     std::cout << " 3. 取消預購門票 (退票)\n";
-    std::cout << " 4. 退出系統\n";
-    std::cout << "==========================================\n";
-    std::cout << "請輸入您的選擇 (1-4): ";
+    std::cout << " 4. 返回主選單\n";
+    std::cout << "------------------------------------------\n";
+    std::cout << "請選擇操作 (1-4): ";
 }
 
 int main() {
@@ -25,116 +38,151 @@ int main() {
     system("chcp 65001 > nul");
     #endif
 
-    // 使用 STL std::vector 與 std::shared_ptr 來儲存多型物件
-    std::vector<std::shared_ptr<Ticket>> tickets;
+    DataManager db("data/events.txt", "data/bookings.txt");
+    if (!db.loadEvents()) {
+        std::cerr << "系統初始化失敗，無法讀取活動檔！\n";
+        return 1;
+    }
+    if (!db.loadBookings()) {
+        std::cerr << "警告：無法載入預訂紀錄！\n";
+    }
 
-    // 建立一些測試用的活動門票 (周杰倫演唱會，基礎票價 $3000)
-    std::string eventName = "周杰倫台北演唱會";
-    double basePrice = 3000.0;
-
-    // 填入初始座位資料
-    tickets.push_back(std::make_shared<RegularTicket>(101, eventName, "A1", basePrice));
-    tickets.push_back(std::make_shared<RegularTicket>(102, eventName, "A2", basePrice));
-    tickets.push_back(std::make_shared<VIPTicket>(201, eventName, "VIP-1", basePrice, "周杰倫限定紀念海報 + 螢光棒", 1000.0));
-    tickets.push_back(std::make_shared<VIPTicket>(202, eventName, "VIP-2", basePrice, "周杰倫限定紀念海報 + 螢光棒", 1000.0));
-    tickets.push_back(std::make_shared<StudentTicket>(301, eventName, "S1", basePrice));
-    tickets.push_back(std::make_shared<StudentTicket>(302, eventName, "S2", basePrice));
-
-    int choice = 0;
     while (true) {
-        printMenu();
-        if (!(std::cin >> choice)) {
-            std::cout << "無效的輸入！請輸入數字。\n";
+        const auto& events = db.getEvents();
+        printEventMenu(events);
+        int eventChoice = 0;
+        if (!(std::cin >> eventChoice)) {
+            std::cout << "無效輸入，請輸入數字！\n";
             std::cin.clear();
             std::cin.ignore(10000, '\n');
             continue;
         }
 
-        if (choice == 4) {
+        if (eventChoice == (int)events.size() + 1) {
             std::cout << "\n感謝使用門票預購系統，再見！\n";
             break;
         }
 
-        switch (choice) {
-            case 1: {
-                std::cout << "\n========== 全體票券資訊 (多型展示) ==========\n";
-                for (const auto& ticket : tickets) {
-                    ticket->displayInfo();
-                }
+        if (eventChoice < 1 || eventChoice > (int)events.size()) {
+            std::cout << "選擇超出範圍！\n";
+            continue;
+        }
+
+        const Event& selectedEvent = events[eventChoice - 1];
+
+        while (true) {
+            printActionMenu(selectedEvent.name);
+            int actionChoice = 0;
+            if (!(std::cin >> actionChoice)) {
+                std::cout << "無效輸入，請輸入數字！\n";
+                std::cin.clear();
+                std::cin.ignore(10000, '\n');
+                continue;
+            }
+
+            if (actionChoice == 4) {
                 break;
             }
-            case 2: {
-                int targetId;
-                std::cout << "請輸入欲預購的票券 ID: ";
-                if (!(std::cin >> targetId)) {
-                    std::cin.clear();
-                    std::cin.ignore(10000, '\n');
-                    std::cout << "無效的 ID 格式！\n";
+
+            auto& tickets = db.getTickets();
+
+            switch (actionChoice) {
+                case 1: {
+                    std::cout << "\n========== [" << selectedEvent.name << "] 座位狀態 ==========\n";
+                    for (const auto& ticket : tickets) {
+                        if (ticket->getEventName() == selectedEvent.name) {
+                            ticket->displayInfo();
+                        }
+                    }
                     break;
                 }
+                case 2: {
+                    std::cout << "\n請輸入要預購的座位號碼 (例如 A1, B2): ";
+                    std::string seatNum;
+                    std::cin >> seatNum;
 
-                // 使用 STL std::find_if 來查詢票券
-                auto it = std::find_if(tickets.begin(), tickets.end(), [targetId](const std::shared_ptr<Ticket>& t) {
-                    return t->getId() == targetId;
-                });
+                    // 尋找對應的座位
+                    auto it = std::find_if(tickets.begin(), tickets.end(), [&](const std::shared_ptr<Ticket>& t) {
+                        return t->getEventName() == selectedEvent.name && t->getSeatNumber() == seatNum;
+                    });
 
-                if (it == tickets.end()) {
-                    std::cout << "錯誤：找不到 ID 為 " << targetId << " 的票券。\n";
-                } else if ((*it)->getIsBooked()) {
-                    std::cout << "錯誤：該門票已被預購 (購買者: " << (*it)->getBuyerName() << ")。\n";
-                } else {
-                    std::string buyerName;
-                    std::cout << "請輸入購買者姓名: ";
-                    std::cin >> buyerName;
+                    if (it == tickets.end()) {
+                        std::cout << "錯誤：在此活動中找不到座位號碼 \"" << seatNum << "\"\n";
+                    } else if ((*it)->getIsBooked()) {
+                        std::cout << "錯誤：座位 \"" << seatNum << "\" 已經被預購！\n";
+                    } else {
+                        std::cout << "請選擇票券種類:\n";
+                        std::cout << " 1. 一般票 (原價 $" << selectedEvent.basePrice << ")\n";
+                        std::cout << " 2. VIP 尊榮票 (1.5倍價格 + $500 附加費，贈送專屬周邊)\n";
+                        std::cout << " 3. 學生優待票 (享 8 折優惠，需驗證學生證學號)\n";
+                        std::cout << "請輸入票種選項 (1-3): ";
+                        int typeChoice = 1;
+                        std::cin >> typeChoice;
 
-                    // 使用 std::dynamic_pointer_cast 進行安全的向下轉型 (Downcasting)
-                    // 以處理學生票專有的學號輸入
-                    auto studentTicket = std::dynamic_pointer_cast<StudentTicket>(*it);
-                    if (studentTicket) {
-                        std::string studentId;
-                        std::cout << "此票券為學生票，請輸入學號進行驗證: ";
-                        std::cin >> studentId;
-                        studentTicket->setStudentID(studentId);
+                        std::string buyerName;
+                        std::cout << "請輸入購買者姓名: ";
+                        std::cin >> buyerName;
+
+                        std::shared_ptr<Ticket> newTicket = nullptr;
+                        int ticketId = (*it)->getId();
+
+                        if (typeChoice == 2) {
+                            newTicket = std::make_shared<VIPTicket>(ticketId, selectedEvent.name, seatNum, selectedEvent.basePrice);
+                        } else if (typeChoice == 3) {
+                            std::string stuId;
+                            std::cout << "請輸入學生證學號: ";
+                            std::cin >> stuId;
+                            newTicket = std::make_shared<StudentTicket>(ticketId, selectedEvent.name, seatNum, selectedEvent.basePrice, stuId);
+                        } else {
+                            newTicket = std::make_shared<RegularTicket>(ticketId, selectedEvent.name, seatNum, selectedEvent.basePrice);
+                        }
+
+                        if (newTicket) {
+                            newTicket->book(buyerName);
+                            *it = newTicket; // 用新建立的衍生票種物件替換原本的預設一般票
+
+                            // 寫入檔案儲存
+                            if (db.saveBookings()) {
+                                std::cout << "預約成功！訂單已即時同步至 bookings.txt。\n";
+                                std::cout << "應付票價: $" << newTicket->calculatePrice() << " TWD\n";
+                            } else {
+                                std::cout << "警告：預約成功，但寫入檔案時失敗！\n";
+                            }
+                        }
                     }
-
-                    (*it)->book(buyerName);
-                    std::cout << "預約成功！\n";
-                    std::cout << "您已預約：" << (*it)->getSeatNumber() << " 號座位\n";
-                    std::cout << "應付金額為：$" << std::fixed << std::setprecision(0) << (*it)->calculatePrice() << " TWD\n";
-                }
-                break;
-            }
-            case 3: {
-                int targetId;
-                std::cout << "請輸入要取消預購的票券 ID: ";
-                if (!(std::cin >> targetId)) {
-                    std::cin.clear();
-                    std::cin.ignore(10000, '\n');
-                    std::cout << "無效的 ID 格式！\n";
                     break;
                 }
+                case 3: {
+                    std::cout << "\n請輸入欲取消的座位號碼 (例如 A1, B2): ";
+                    std::string seatNum;
+                    std::cin >> seatNum;
 
-                auto it = std::find_if(tickets.begin(), tickets.end(), [targetId](const std::shared_ptr<Ticket>& t) {
-                    return t->getId() == targetId;
-                });
+                    auto it = std::find_if(tickets.begin(), tickets.end(), [&](const std::shared_ptr<Ticket>& t) {
+                        return t->getEventName() == selectedEvent.name && t->getSeatNumber() == seatNum;
+                    });
 
-                if (it == tickets.end()) {
-                    std::cout << "錯誤：找不到 ID 為 " << targetId << " 的票券。\n";
-                } else if (!(*it)->getIsBooked()) {
-                    std::cout << "錯誤：該票券尚未售出，無法取消預購。\n";
-                } else {
-                    // 若為學生票，取消時一併清空學號
-                    auto studentTicket = std::dynamic_pointer_cast<StudentTicket>(*it);
-                    if (studentTicket) {
-                        studentTicket->setStudentID("");
+                    if (it == tickets.end()) {
+                        std::cout << "錯誤：在此活動中找不到該座位！\n";
+                    } else if (!(*it)->getIsBooked()) {
+                        std::cout << "錯誤：該座位目前為空閒狀態，無法取消！\n";
+                    } else {
+                        // 重置為預設的空閒 RegularTicket
+                        int ticketId = (*it)->getId();
+                        auto resetTicket = std::make_shared<RegularTicket>(ticketId, selectedEvent.name, seatNum, selectedEvent.basePrice);
+                        *it = resetTicket;
+
+                        // 寫入檔案儲存
+                        if (db.saveBookings()) {
+                            std::cout << "退票成功！座位已釋出，bookings.txt 已同步更新。\n";
+                        } else {
+                            std::cout << "警告：退票成功，但寫入檔案時失敗！\n";
+                        }
                     }
-                    (*it)->cancel();
-                    std::cout << "成功！已取消該門票預購，座位已釋出。\n";
+                    break;
                 }
-                break;
+                default:
+                    std::cout << "無效操作選項！\n";
             }
-            default:
-                std::cout << "請輸入 1 到 4 之間的選項。\n";
         }
     }
 
